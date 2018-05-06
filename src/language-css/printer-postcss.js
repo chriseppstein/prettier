@@ -45,6 +45,8 @@ const hasLessExtendValueNode = utils.hasLessExtendValueNode;
 const hasParensAroundValueNode = utils.hasParensAroundValueNode;
 const maybeToLowerCase = utils.maybeToLowerCase;
 
+const ATTR_ASPECTS = ["namespace", "attribute", "operator", "value", "insensitive"];
+
 function genericPrint(path, options, print) {
   const node = path.getValue();
 
@@ -309,22 +311,22 @@ function genericPrint(path, options, print) {
       return concat([".", adjustNumbers(adjustStrings(node.value, options))]);
     }
     case "selector-attribute": {
-      return concat([
-        "[",
-        node.namespace
-          ? concat([node.namespace === true ? "" : node.namespace.trim(), "|"])
-          : "",
-        node.attribute.trim(),
-        node.operator ? node.operator : "",
-        typeof node.value !== "undefined"
-          ? quoteAttributeValue(
-              node.quoteMark ? adjustStrings(node.raws.value, options) : node.value,
-              options
-            )
-          : "",
-        node.insensitive ? " i" : "",
-        "]"
-      ]);
+      trimSpace(node.spaces);
+      trimSpace(node.raws.spaces);
+      for (let i = 0; i < ATTR_ASPECTS.length; i++) {
+        trimSpace(node.spaces[ATTR_ASPECTS[i]]);
+        trimSpace(node.raws.spaces && node.raws.spaces[ATTR_ASPECTS[i]]);
+      }
+      if (typeof node.value !== "undefined") {
+          let quotedValue = node.quoteMark ?
+            quoteAttributeValue(adjustStrings(node.getQuotedValue(), options), options) :
+            node.getQuotedValue();
+          // note: the quoteMark attribute might become out of sync here.
+          // if important, you can set _quoteMark.
+          node.setPropertyAndEscape("value", node.value, quotedValue);
+      }
+      // I don't fully understand how concat works. 
+      return concat([node.toString()]);
     }
     case "selector-combinator": {
       if (
@@ -333,13 +335,15 @@ function genericPrint(path, options, print) {
         node.value === "~" ||
         node.value === ">>>"
       ) {
+        trimSpace(node.spaces);
+        trimSpace(node.raws.spaces);
         const parentNode = path.getParentNode();
         const leading =
           parentNode.type === "selector-selector" &&
           parentNode.nodes[0] === node
             ? ""
             : line;
-        return concat([leading, node.value, isLastNode(path, node) ? "" : " "]);
+        return concat([leading, node.toString(), isLastNode(path, node) ? "" : " "]);
       }
       const leading = node.value.trim().startsWith("(") ? line : "";
       const value =
@@ -355,6 +359,9 @@ function genericPrint(path, options, print) {
       ]);
     }
     case "selector-selector": {
+      // there needs to be a special case here for selector nodes within psuedos
+      // but I don't understands how these group/indent/concat methods work.
+      // check `node.parent.type` to see if it's a `pseudo`.
       return group(indent(concat(path.map(print, "nodes"))));
     }
     case "selector-pseudo": {
@@ -367,6 +374,9 @@ function genericPrint(path, options, print) {
     }
     case "selector-nesting": {
       return node.value;
+    }
+    case "selector-space": {
+      return '';
     }
     // postcss-values-parser
     case "value-root": {
@@ -809,6 +819,15 @@ function printNumber(rawNumber) {
       // Remove trailing `.0`.
       .replace(/\.0(?=$|e)/, "")
   );
+}
+
+function trimSpace(space) {
+  if (space && space.before) {
+    space.before == space.before.trim();
+  }
+  if (space && space.after) {
+    space.after == space.after.trim();
+  }
 }
 
 module.exports = {
